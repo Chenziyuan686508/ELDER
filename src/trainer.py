@@ -71,6 +71,19 @@ logger = logging.get_logger(__name__)
 HYBRID_CHECKPOINT_METADATA = "vlm2vec_hybrid_checkpoint.json"
 
 
+def _checkpoint_backbone_metadata(encoder) -> dict:
+    config = getattr(encoder, "config", None)
+    if config is None:
+        return {}
+    fields = {
+        "model_type": getattr(config, "model_type", None),
+        "architectures": list(getattr(config, "architectures", None) or []),
+        "hidden_size": getattr(config, "hidden_size", None),
+        "num_hidden_layers": getattr(config, "num_hidden_layers", None),
+    }
+    return {key: value for key, value in fields.items() if value is not None}
+
+
 def _save_nested_peft_adapter(encoder, output_dir: str) -> None:
     """Save the language-model adapter embedded in a Qwen-VL wrapper.
 
@@ -90,6 +103,7 @@ def _save_nested_peft_adapter(encoder, output_dir: str) -> None:
         "adapter_scope": "encoder.model",
         "full_state_file": SAFE_WEIGHTS_NAME,
         "allowed_missing_keys": ["lm_head.weight"],
+        "backbone": _checkpoint_backbone_metadata(encoder),
     }
     metadata_path = os.path.join(output_dir, HYBRID_CHECKPOINT_METADATA)
     with open(metadata_path, "w", encoding="utf-8") as handle:

@@ -900,6 +900,37 @@ class MMEBModel(nn.Module):
                 model_name_or_path, **kwargs, config=config, torch_dtype=torch.bfloat16, trust_remote_code=True
             )
 
+        if hybrid_metadata is not None and hybrid_metadata.get("backbone"):
+            expected_backbone = hybrid_metadata["backbone"]
+            actual_config = getattr(base_model, "config", None)
+            mismatches = []
+            for key in ("model_type", "hidden_size", "num_hidden_layers"):
+                expected = expected_backbone.get(key)
+                actual = getattr(actual_config, key, None)
+                if expected is not None and actual != expected:
+                    mismatches.append(
+                        f"{key}: checkpoint={expected!r}, base_model={actual!r}"
+                    )
+            expected_architectures = expected_backbone.get("architectures") or []
+            actual_architectures = list(
+                getattr(actual_config, "architectures", None) or []
+            )
+            missing_architectures = [
+                name
+                for name in expected_architectures
+                if name not in actual_architectures
+            ]
+            if missing_architectures:
+                mismatches.append(
+                    "architectures missing from base model: "
+                    f"{missing_architectures!r}"
+                )
+            if mismatches:
+                raise RuntimeError(
+                    "Checkpoint backbone does not match the selected base model: "
+                    + "; ".join(mismatches)
+                )
+
         if model_args.lora:
             _require_peft()
             print_master(f"Loading LoRA from {model_name_or_path}")

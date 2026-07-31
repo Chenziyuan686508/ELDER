@@ -12,6 +12,9 @@ cd "$repo_dir"
 : "${ELDER_BATCH_SIZE:=2}"
 : "${ELDER_GRAD_ACCUM_STEPS:=1}"
 : "${ELDER_RESIZE_MAX_PIXELS:=200704}"
+: "${ELDER_RUN_NAME:=elder-stage1-debug}"
+: "${ELDER_RESUME_FROM:=none}"
+: "${ELDER_SAVE_STEPS:=$ELDER_MAX_STEPS}"
 
 export ELDER_MODEL_PATH
 export ELDER_COLPALI_DATA
@@ -19,11 +22,14 @@ export CUDA_VISIBLE_DEVICES="$ELDER_CUDA_VISIBLE_DEVICES"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 
+python scripts/elder/stage1_model_contract.py \
+  --model-path "$ELDER_MODEL_PATH"
+
 python train.py \
   --model_name "$ELDER_MODEL_PATH" \
   --dataset_config experiments/elder/stage1_debug_vidore.yaml \
   --output_dir "$ELDER_OUTPUT_DIR" \
-  --run_name elder-stage1-debug \
+  --run_name "$ELDER_RUN_NAME" \
   --lora \
   --lora_r 16 \
   --lora_alpha 64 \
@@ -44,8 +50,9 @@ python train.py \
   --learning_rate 5e-5 \
   --lr_scheduler_type linear \
   --logging_steps 1 \
-  --save_steps "$ELDER_MAX_STEPS" \
+  --save_steps "$ELDER_SAVE_STEPS" \
+  --save_total_limit 2 \
   --save_safetensors true \
   --remove_unused_columns false \
-  --resume_from auto \
+  --resume_from "$ELDER_RESUME_FROM" \
   --report_to none

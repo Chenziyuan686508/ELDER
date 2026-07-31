@@ -4,6 +4,11 @@ from types import MethodType, SimpleNamespace
 import torch
 
 from src.data.collator.train_collator import MultimodalDataCollator
+from src.elder.stage1 import (
+    compare_stage1_reports,
+    compute_retrieval_metrics,
+    validate_qwen2_vl_2b_config,
+)
 from src.loss import SimpleContrastiveLoss
 from src.model.model import MMEBModel
 from src.model.processor import process_vlm_inputs_fns
@@ -42,6 +47,52 @@ def test_contrastive_loss_backpropagates():
     assert math.isfinite(loss.item())
     assert query.grad is not None
     assert query.grad.norm().item() > 0
+
+
+def test_fixed_qwen2_vl_2b_contract():
+    contract = validate_qwen2_vl_2b_config(
+        {
+            "model_type": "qwen2_vl",
+            "architectures": ["Qwen2VLForConditionalGeneration"],
+            "hidden_size": 1536,
+            "num_hidden_layers": 28,
+        }
+    )
+
+    assert contract["model_id"] == "Qwen/Qwen2-VL-2B-Instruct"
+
+
+def test_fixed_qwen2_vl_2b_contract_rejects_other_size():
+    try:
+        validate_qwen2_vl_2b_config(
+            {
+                "model_type": "qwen2_vl",
+                "architectures": ["Qwen2VLForConditionalGeneration"],
+                "hidden_size": 3584,
+                "num_hidden_layers": 28,
+            }
+        )
+    except ValueError as error:
+        assert "Qwen/Qwen2-VL-2B-Instruct" in str(error)
+    else:
+        raise AssertionError("A non-2B config should be rejected.")
+
+
+def test_stage1_retrieval_metrics_and_acceptance():
+    embeddings = torch.eye(4)
+    after_metrics = compute_retrieval_metrics(embeddings, embeddings)
+    before_metrics = compute_retrieval_metrics(
+        embeddings,
+        embeddings.flip(0),
+    )
+
+    assert after_metrics["query_to_candidate"]["recall_at"]["1"] == 1.0
+    result = compare_stage1_reports(
+        {"metrics": before_metrics},
+        {"metrics": after_metrics},
+    )
+    assert result["status"] == "passed"
+    assert all(result["checks"].values())
 
 
 def test_last_pooling_uses_last_non_padding_token_and_normalizes():
@@ -140,10 +191,21 @@ def test_nested_peft_checkpoint_writes_resume_metadata(tmp_path):
         def save_pretrained(self, output_dir, safe_serialization):
             assert safe_serialization is True
 
-    encoder = SimpleNamespace(model=DummyPeftModel())
+    encoder = SimpleNamespace(
+        model=DummyPeftModel(),
+        config=SimpleNamespace(
+            model_type="qwen2_vl",
+            architectures=["Qwen2VLForConditionalGeneration"],
+            hidden_size=1536,
+            num_hidden_layers=28,
+        ),
+    )
 
     _save_nested_peft_adapter(encoder, str(tmp_path))
 
     metadata_path = tmp_path / HYBRID_CHECKPOINT_METADATA
     assert metadata_path.is_file()
-    assert '"adapter_scope": "encoder.model"' in metadata_path.read_text()
+    metadata = metadata_path.read_text()
+    assert '"adapter_scope": "encoder.model"' in metadata
+    assert '"model_type": "qwen2_vl"' in metadata
+    assert '"hidden_size": 1536' in metadata

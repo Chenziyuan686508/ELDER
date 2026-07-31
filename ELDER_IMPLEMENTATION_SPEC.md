@@ -3,7 +3,7 @@
 > **项目名称**：ELDER — Explicit-to-Latent Process Distillation for Efficient Multimodal Retrieval  
 > **文档用途**：交给 Codex 作为实现依据。本文档优先描述工程接口、训练流程和验收标准，而不是论文写作。  
 > **推荐基础代码库**：在官方 `TIGER-AI-Lab/VLM2Vec` V2 代码上增量开发，不建议从零搭建数据和评测框架。  
-> **默认主干模型**：`Qwen/Qwen2.5-VL-3B-Instruct`；为了与 VLM2Vec-V2、PLUME 做严格复现，也应保留切换到 `Qwen/Qwen2-VL-2B-Instruct` 的能力。
+> **固定主干模型**：`Qwen/Qwen2-VL-2B-Instruct`。Stage 1、Stage 2、Stage 3 以及最终推理均使用同一主干模型；当前项目不进行跨 backbone 或跨模型规模切换。
 
 ---
 
@@ -362,10 +362,10 @@ Query + Positive Candidate → Query CoT
 
 使用双向或单向 InfoNCE。主实现应支持双向，默认以 VLM2Vec 官方设置为准。
 
-### 推荐默认配置
+### 固定默认配置
 
 ```yaml
-model: Qwen2.5-VL-3B-Instruct
+model: Qwen/Qwen2-VL-2B-Instruct
 tuning: LoRA
 lora_r: 16
 lora_alpha: 32
@@ -646,7 +646,7 @@ u = feedback_adapter(z.detach()) # 仅消融
 - 单步 `inputs_embeds`；
 - hidden state extraction。
 
-不要把 Qwen2-VL、Qwen2.5-VL 的内部字段散落在 ELDER 主模型中。
+不要把 Qwen2-VL 的内部字段散落在 ELDER 主模型中。
 
 ---
 
@@ -821,10 +821,10 @@ Stage 2/3 的 collator 需要同时返回：
 
 实验室资源：8×L40S。
 
-### MVP 推荐
+### MVP 固定配置
 
 ```yaml
-backbone: Qwen2.5-VL-3B-Instruct
+backbone: Qwen/Qwen2-VL-2B-Instruct
 precision: bf16
 tuning: LoRA
 lora_r: 32
@@ -842,9 +842,9 @@ Stage 3 同时存在 Student 和 Teacher，因此 batch 应从小规模开始。
 ### 扩展实验
 
 - `K ∈ {2, 4, 8}`；
-- Qwen2-VL-2B：用于公平对比 VLM2Vec-V2 / PLUME；
-- Qwen2.5-VL-3B：主开发模型；
-- 7B：在方法跑通后再尝试；
+- 所有主实验和消融实验均固定使用 `Qwen/Qwen2-VL-2B-Instruct`；
+- Stage 2 必须从同 backbone 的 Stage 1 checkpoint 初始化，Stage 3 必须从同 backbone 的 Stage 2 checkpoint 初始化；
+- checkpoint 加载时应校验 backbone 标识，禁止静默加载其他模型规模或架构的权重；
 - LoRA 与 full fine-tuning 做资源允许下的对比。
 
 ---
@@ -1071,7 +1071,7 @@ Codex 请严格按以下顺序推进，不要一开始同时实现所有功能�
 
 处理：
 
-- 先 2B/3B + LoRA；
+- 固定使用 2B + LoRA；
 - 减小 CoT 长度；
 - 减小 K；
 - Teacher no-grad；
@@ -1110,7 +1110,7 @@ Codex 开发时优先参考以下公开资源：
 
 1. `TIGER-AI-Lab/VLM2Vec`：数据加载、interleaved sub-batching、GradCache、InfoNCE、MMEB-V2 评测和 Qwen-VL processor。
 2. VLM2Vec-V2（arXiv:2507.04590）：训练数据由 MMEB-train、LLaVA-Hound、ViDoRe 和 VisRAG 构成；官方 2B 配方使用 temperature 0.02、LoRA 和大 global batch。
-3. `haoxiangzhao12138/PLUME`：Qwen2/Qwen2.5-VL 中连续 latent rollout、KV cache、position IDs 和 multimodal prefix 的工程处理可作为参考。
+3. `haoxiangzhao12138/PLUME`：Qwen2-VL 中连续 latent rollout、KV cache、position IDs 和 multimodal prefix 的工程处理可作为参考。
 4. UME-R1（arXiv:2511.00405）：使用同类 MMEB-V2 训练语料，并为 query 和 target 构造推理数据，可参考其 CoT 数据组织方式，但 ELDER 不使用 RL。
 5. ELDER 的核心差异：不采用 PLUME 的 progressive replacement curriculum，也不在推理时生成文本；采用 EMA teacher 对每个 CoT prefix state 与 recurrent latent state 做阶段对齐和 transition distillation。
 

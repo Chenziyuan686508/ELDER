@@ -96,6 +96,49 @@ CUDA_VISIBLE_DEVICES=4 python scripts/elder/stage1_checkpoint_smoke.py \
   --checkpoint /data/chenziyuan/checkpoints/elder/stage1_smoke_v2
 ```
 
+## 128-pair 检索验收
+
+Stage 1 的下一道门槛是在固定的前 128 个 ViDoRe/ColPali pairs 上执行：
+
+1. 评测未训练的 Qwen2-VL-2B；
+2. 训练 100 steps；
+3. 加载训练 checkpoint 并评测同一批 pairs；
+4. 比较双向 Recall@1/5/10、InfoNCE、embedding norm 和正负样本间隔。
+
+这是 correctness-first 的小规模过拟合测试，不代表测试集泛化性能。验收要求
+query-to-candidate InfoNCE 下降、Recall@1 不下降且高于随机水平的 3 倍，同时
+归一化 embedding 的平均范数维持在 `1±0.05`。
+
+训练统一放在 `tmux` 中。启动脚本会拒绝显存使用超过 4096 MiB 或利用率超过
+10% 的 GPU，防止误占用其他任务：
+
+```bash
+cd /home/chenziyuan/code/ELDER
+bash scripts/elder/start_stage1_acceptance_tmux.sh GPU编号
+```
+
+启动后脚本会打印 session、日志和输出目录。查看实时输出：
+
+```bash
+tmux attach -t SESSION名称
+```
+
+按 `Ctrl-b`，再按 `d` 可退出界面但保留训练。最终文件位于：
+
+```text
+/data/chenziyuan/checkpoints/elder/stage1_acceptance/<run-id>/
+├── status.txt
+├── stage1_acceptance.log
+├── train/
+└── metrics/
+    ├── before.json
+    ├── after.json
+    └── acceptance.json
+```
+
+只有明确确认可以共享一张繁忙 GPU 时，才允许使用
+`ELDER_ALLOW_BUSY_GPU=1` 跳过保护；默认不使用该选项。
+
 ## 验收顺序
 
 1. `python -m pytest -q tests/elder`
@@ -107,7 +150,7 @@ CUDA_VISIBLE_DEVICES=4 python scripts/elder/stage1_checkpoint_smoke.py \
 
 ## 当前验证记录（2026-07-31）
 
-- 单元测试：6 passed；
+- 单元测试：9 passed；
 - 只读 preflight：通过；
 - Qwen2-VL-2B + ViDoRe/ColPali 单 GPU 1-step：通过；
 - step 1 loss：3.4853，gradient norm：2204.61；
