@@ -1,0 +1,10 @@
+# Small correctness-first Stage 1 baseline over a local ViDoRe/ColPali shard.
+# Paths are resolved from environment variables by src.utils.config_utils.
+
+colpali_train_debug:
+  dataset_parser: vidore
+  dataset_path: ${ELDER_COLPALI_DATA}/data/train-00000-of-00082.parquet
+  subset_name: colpali_train_debug
+  dataset_split: train
+  num_sample_per_subset: 128
+  weight: 1

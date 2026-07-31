@@ -1,0 +1,35 @@
+__pycache__/
+*.pyc
+*.log
+*.pt
+*.ckpt
+*.pth
+*.bin
+*.incomplete
+*.safetensors
+
+.cache/
+.pytest_cache/
+.env
+.env.elder
+wandb/
+outputs/
+datasets/
+checkpoints/
+artifacts/
+*.egg-info/
+
+# editors / OS
+.DS_Store
+.vscode/
+.idea/
+
+# temp / runtime junk
+core.*
+Environment
+exps/
+*.whl
+
+# OmniSET: notebooks + runtime outputs
+OmniSET/notebooks/
+OmniSET/outputs/
