@@ -19,6 +19,7 @@ import math
 
 from src.data.collator.train_collator import split_vlm_inputs, get_dense_rep, split_and_process_vlm_inputs
 from src.model.model import MMEBModel
+from src.elder.stage1 import validate_stage1_v2_dora_configuration
 from src.loss import SimpleContrastiveLoss, DistributedContrastiveLoss
 from src.grad_cache.grad_cache import GradCache
 from torch.utils.data import DataLoader, Dataset, IterableDataset, RandomSampler, SequentialSampler
@@ -92,6 +93,13 @@ def _save_nested_peft_adapter(encoder, output_dir: str) -> None:
     PEFT structure during resume, so store both the adapter config/weights and
     a small format marker next to the full hybrid state.
     """
+
+    # A standard full-model PeftModel already saves exactly the adapter files.
+    # Its attribute forwarding can expose an inner ``model`` that appears to
+    # have ``peft_config``; treating that as the legacy nested format writes a
+    # redundant multi-GB language-model state and incorrect hybrid metadata.
+    if hasattr(encoder, "peft_config"):
+        return
 
     nested_model = getattr(encoder, "model", None)
     if nested_model is None or not hasattr(nested_model, "peft_config"):
@@ -201,6 +209,14 @@ class MMEBTrainer(Trainer):
         self.model_args.checkpoint_path = resume_from_checkpoint
         logger.info(f"Loading checkpoint from {resume_from_checkpoint}")
         self.model = MMEBModel.load(self.model_args)
+        if getattr(self.model_args, "strict_stage1_dora", False):
+            report = validate_stage1_v2_dora_configuration(
+                self.model_args, self.model
+            )
+            logger.info(
+                "Strict Stage 1 V2 DoRA resume audit passed: trainable=%s",
+                f"{report['parameters']['trainable_parameters']:,}",
+            )
         self.model_wrapped = self.model
 
     def _inner_training_loop(
@@ -474,8 +490,11 @@ class MMEBTrainer(Trainer):
                     step += 1
                     total_batched_samples += 1
 
-                    dataset_stat = collections.Counter(inputs[0]['global_dataset_name'])
-                    if step < 5:
+                    log_batch_composition = os.environ.get(
+                        "ELDER_LOG_BATCH_COMPOSITION", "0"
+                    ).strip().lower() in {"1", "true", "yes", "on"}
+                    if log_batch_composition and step < 5:
+                        dataset_stat = collections.Counter(inputs[0]['global_dataset_name'])
                         print_rank(f"dataset name: {str(set(inputs[0]['global_dataset_name']))}")
                         for dname, count in sorted(dataset_stat.items(), key=lambda t:t[1], reverse=True):
                             print_rank(f"\t\tdataset_name={dname}, count={count}")

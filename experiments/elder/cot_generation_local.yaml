@@ -1,0 +1,80 @@
+# Offline CoT generation for the four Stage 1 training sources.
+# Source .env.elder before invoking Python directly; the launcher does this.
+
+generation:
+  model_path: /root/autodl-tmp/models/GLM-4.1V-9B-Thinking
+  output_dir: /root/autodl-tmp/datasets/ELDER-CoT
+  seed: 42
+  max_per_task: 50000
+  num_shards: 4
+  max_retries: 3
+  max_new_tokens: 1536
+  temperature: 0.2
+  top_p: 0.8
+  attn_implementation: sdpa
+
+datasets:
+  mmeb:
+    root: ${ELDER_MMEB_DATA}
+    split: original
+    tasks:
+      - {name: ImageNet_1K, max_source_rows: 100000}
+      - {name: N24News, max_source_rows: 50000}
+      - {name: HatefulMemes, max_source_rows: 10000}
+      - {name: VOC2007, max_source_rows: 10000}
+      - {name: SUN397, max_source_rows: 20000}
+      - {name: OK-VQA, max_source_rows: 10000}
+      - {name: A-OKVQA, max_source_rows: 20000}
+      - {name: DocVQA, max_source_rows: 40000}
+      - {name: InfographicsVQA, max_source_rows: 25000}
+      - {name: ChartQA, max_source_rows: 28000}
+      - {name: Visual7W, max_source_rows: 70000}
+      - {name: VisDial, max_source_rows: 130000}
+      - {name: CIRR, max_source_rows: 30000}
+      - {name: VisualNews_t2i, max_source_rows: 100000}
+      - {name: VisualNews_i2t, max_source_rows: 100000}
+      - {name: MSCOCO_t2i, max_source_rows: 100000}
+      - {name: MSCOCO_i2t, max_source_rows: 120000}
+      - {name: NIGHTS, max_source_rows: 20000}
+      - {name: WebQA, max_source_rows: 20000}
+      - {name: MSCOCO, max_source_rows: 100000}
+
+  llavahound:
+    root: ${ELDER_LLAVAHOUND_DATA}
+    tasks:
+      - name: video_caption_300k
+        metadata: video_instruction/train/sft/video_caption_300k.jsonl
+        frame_root: train_300k
+        mode: caption_retrieval
+        num_frames: 8
+      - name: video_caption_300k_video
+        metadata: video_instruction/train/sft/video_caption_300k.jsonl
+        frame_root: train_300k
+        mode: video_retrieval
+        num_frames: 8
+      - name: video_qa_240k
+        metadata: video_instruction/train/sft/video_240k_caption_15k.jsonl
+        frame_root: train_300k
+        mode: video_qa
+        num_frames: 8
+
+  colpali:
+    path: ${ELDER_COLPALI_DATA}
+    group_by: source
+    expected_sources:
+      - pdf
+      - docvqa
+      - tatdqa
+      - Infographic-VQA
+      - arxiv_qa
+
+  visrag:
+    path: ${ELDER_VISRAG_DATA}/data
+    group_by: source
+    expected_sources:
+      - PlotQA
+      - ArxivQA
+      - InfoVQA
+      - MP-DocVQA
+      - SlideVQA
+      - ChartQA

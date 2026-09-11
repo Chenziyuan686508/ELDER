@@ -37,6 +37,24 @@ class ModelArguments:
     lora_alpha: int = field(default=64, metadata={"help": "lora alpha"})
     lora_dropout: float = field(default=0.1, metadata={"help": "lora dropout"})
     lora_target_modules: str = field(default="qkv_proj,o_proj,gate_up_proj,down_proj,k_proj,q_proj,out_proj,v_proj,gate_proj,up_proj", metadata={"help": "lora target modules"})
+    lora_adapter_scope: str = field(
+        default="auto",
+        metadata={
+            "help": (
+                "Where PEFT is attached: auto (backward-compatible), full_model "
+                "(original VLM2Vec-V2 Qwen2-VL behavior), or language_model."
+            )
+        },
+    )
+    strict_stage1_dora: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Fail before training unless the original Qwen2-VL VLM2Vec-V2 "
+                "DoRA scope, hyperparameters, and trainable-parameter contract hold."
+            )
+        },
+    )
     full_finetune: bool = field(default=False, metadata={"help": "train all parameters (disable embedding-only freezing)"})
     num_crops: int = field(default=16, metadata={"help": "number of crops used in image encoder"})
     uigraph_use: bool = field(default=False, metadata={"help": "Enable ui graph for token selection"})

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List, Tuple
 import datasets
 from datasets import load_dataset, concatenate_datasets
@@ -114,12 +115,44 @@ def data_prepare_v4(batch_dict, *args, **kwargs):
 
 
 DATASET_PARSER_NAME = "mmeb"
+
+
+def _load_local_mmeb_subset(
+    dataset_path: str,
+    subset_name: str,
+    dataset_split: str,
+):
+    """Load one MMEB subset from the repository's unpacked local layout.
+
+    The official ``TIGER-Lab/MMEB-train`` download stores metadata as one
+    parquet file per subset/split and stores images beneath the same root. It
+    is not a ``datasets`` builder directory, so passing its root directly to
+    ``load_dataset`` would make the loader fall back to the network.
+    """
+
+    root = Path(dataset_path).expanduser()
+    metadata_dir = root / subset_name
+    files = sorted(metadata_dir.glob(f"{dataset_split}-*.parquet"))
+    if not files:
+        raise FileNotFoundError(
+            "Missing local MMEB metadata for "
+            f"subset={subset_name!r}, split={dataset_split!r}: {metadata_dir}"
+        )
+    return load_dataset("parquet", data_files=[str(path) for path in files], split="train")
+
+
 @AutoPairDataset.register(DATASET_PARSER_NAME)
 def load_mmeb_dataset(model_args, data_args, training_args, *args, **kwargs):
     dataset_name = kwargs.get("dataset_name", DATASET_PARSER_NAME)
     subset_name = kwargs.get("subset_name")
     dataset_split = kwargs.get("dataset_split", "original")
-    dataset = load_dataset(dataset_name, subset_name, split=f"{dataset_split}")
+    dataset_path = kwargs.get("dataset_path")
+    if dataset_path:
+        if not subset_name:
+            raise ValueError("Local MMEB loading requires `subset_name`.")
+        dataset = _load_local_mmeb_subset(dataset_path, subset_name, dataset_split)
+    else:
+        dataset = load_dataset(dataset_name, subset_name, split=f"{dataset_split}")
     column_names = dataset.column_names
     num_sample_per_subset = kwargs.get("num_sample_per_subset", getattr(data_args, "num_sample_per_subset", None))
     if num_sample_per_subset is not None and num_sample_per_subset < dataset.num_rows:

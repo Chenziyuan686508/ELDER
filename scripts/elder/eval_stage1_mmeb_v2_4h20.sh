@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$repo_dir"
+
+if [[ -f .env.elder && "${ELDER_ENV_LOADED:-0}" != "1" ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  source .env.elder
+  set +a
+  export ELDER_ENV_LOADED=1
+fi
+
+dry_run=0
+requested_modality=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    --modality)
+      if [[ $# -lt 2 ]]; then
+        printf '%s\n' '--modality requires image, video, visdoc, or all.' >&2
+        exit 2
+      fi
+      requested_modality="$2"
+      shift 2
+      ;;
+    -h|--help)
+      printf '%s\n' \
+        'Usage: bash scripts/elder/eval_stage1_mmeb_v2_4h20.sh [--modality image|video|visdoc|all] [--dry-run]' \
+        '' \
+        'Environment overrides:' \
+        '  ELDER_MMEV2_DATA_DIR        MMEB-V2 root' \
+        '  ELDER_STAGE1_BASE_MODEL      Qwen2-VL base model' \
+        '  ELDER_STAGE1_CHECKPOINT      Stage 1 PEFT or legacy hybrid checkpoint' \
+        '  ELDER_MMEV2_OUTPUT_DIR       Embedding, score, and log root' \
+        '  ELDER_MMEV2_MODALITIES       Comma-separated modalities' \
+        '  ELDER_MMEV2_BATCH_SIZE       Per-GPU evaluation batch size' \
+        '  ELDER_MMEV2_WORKERS          Per-process dataloader workers'
+      exit 0
+      ;;
+    *)
+      printf 'Unknown argument: %s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+: "${ELDER_MMEV2_DATA_DIR:=/root/autodl-tmp/datasets/MMEB-V2}"
+: "${ELDER_STAGE1_BASE_MODEL:=${ELDER_MODEL_PATH:-/root/autodl-tmp/models/Qwen2-VL-2B-Instruct}}"
+: "${ELDER_STAGE1_CHECKPOINT:=/root/autodl-tmp/checkpoints/elder/stage1_full}"
+: "${ELDER_MMEV2_OUTPUT_DIR:=/root/autodl-tmp/eval/elder/stage1_mmeb_v2}"
+: "${ELDER_MMEV2_MODALITIES:=image,video,visdoc}"
+: "${ELDER_MMEV2_BATCH_SIZE:=8}"
+: "${ELDER_MMEV2_WORKERS:=2}"
+: "${ELDER_MMEV2_RESIZE_MAX_PIXELS:=200704}"
+: "${ELDER_MMEV2_MEDIA_CHECK_LIMIT:=100}"
+: "${ELDER_CUDA_VISIBLE_DEVICES:=0,1,2,3}"
+: "${ELDER_MMEV2_EXPECTED_GPU_COUNT:=4}"
+
+if [[ -n "$requested_modality" ]]; then
+  if [[ "$requested_modality" == "all" ]]; then
+    ELDER_MMEV2_MODALITIES="image,video,visdoc"
+  else
+    ELDER_MMEV2_MODALITIES="$requested_modality"
+  fi
+fi
+
+ELDER_CUDA_VISIBLE_DEVICES="${ELDER_CUDA_VISIBLE_DEVICES// /}"
+IFS=', ' read -r -a elder_gpus <<< "$ELDER_CUDA_VISIBLE_DEVICES"
+gpu_count="${#elder_gpus[@]}"
+if [[ "$gpu_count" -ne "$ELDER_MMEV2_EXPECTED_GPU_COUNT" ]]; then
+  printf 'This launcher expected %s visible GPUs but got %s: %s.\n' \
+    "$ELDER_MMEV2_EXPECTED_GPU_COUNT" "$gpu_count" "$ELDER_CUDA_VISIBLE_DEVICES" >&2
+  exit 1
+fi
+
+ELDER_MMEV2_MODALITIES="${ELDER_MMEV2_MODALITIES// /}"
+IFS=',' read -r -a eval_modalities <<< "$ELDER_MMEV2_MODALITIES"
+if [[ "${#eval_modalities[@]}" -lt 1 ]]; then
+  printf '%s\n' 'No evaluation modality selected.' >&2
+  exit 1
+fi
+for modality in "${eval_modalities[@]}"; do
+  case "$modality" in
+    image|video|visdoc) ;;
+    *)
+      printf 'Invalid modality: %s\n' "$modality" >&2
+      exit 1
+      ;;
+  esac
+done
+
+required_model_files=(config.json)
+required_checkpoint_files=(
+  adapter_config.json
+  adapter_model.safetensors
+)
+for filename in "${required_model_files[@]}"; do
+  if [[ ! -s "$ELDER_STAGE1_BASE_MODEL/$filename" ]]; then
+    printf 'Missing base model file: %s\n' "$ELDER_STAGE1_BASE_MODEL/$filename" >&2
+    exit 1
+  fi
+done
+for filename in "${required_checkpoint_files[@]}"; do
+  if [[ ! -s "$ELDER_STAGE1_CHECKPOINT/$filename" ]]; then
+    printf 'Missing Stage 1 checkpoint file: %s\n' "$ELDER_STAGE1_CHECKPOINT/$filename" >&2
+    exit 1
+  fi
+done
+
+if [[ -s "$ELDER_STAGE1_CHECKPOINT/vlm2vec_hybrid_checkpoint.json" ]] && \
+   [[ ! -s "$ELDER_STAGE1_CHECKPOINT/model.safetensors" ]]; then
+  printf 'Legacy hybrid checkpoint is missing full state: %s\n' \
+    "$ELDER_STAGE1_CHECKPOINT/model.safetensors" >&2
+  exit 1
+fi
+if ! python -c 'import pytrec_eval' >/dev/null 2>&1; then
+  printf '%s\n' \
+    'Missing evaluation dependency: pytrec_eval.' \
+    'Install it in the active environment with:' \
+    '  python -m pip install pytrec-eval==0.5' >&2
+  exit 1
+fi
+
+export CUDA_VISIBLE_DEVICES="$ELDER_CUDA_VISIBLE_DEVICES"
+export MMEB_V2_DATA_DIR="$ELDER_MMEV2_DATA_DIR"
+# Backward compatibility for current constants module naming.
+export MMEB_V3_DATA_DIR="$ELDER_MMEV2_DATA_DIR"
+export MMEB_V2_IMAGE_QUERY_DIR="$ELDER_MMEV2_DATA_DIR/image-query"
+export PYTHONPATH="$repo_dir${PYTHONPATH:+:$PYTHONPATH}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+export TRANSFORMERS_NO_ADVISORY_WARNINGS=1
+export PYTHONUNBUFFERED=1
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
+
+timestamp="$(date +%Y%m%d_%H%M%S)"
+run_dir="$ELDER_MMEV2_OUTPUT_DIR/$timestamp"
+if [[ "$dry_run" != "1" ]]; then
+  mkdir -p "$run_dir/logs"
+fi
+
+printf '%s\n' \
+  "MMEB-V2 root: $ELDER_MMEV2_DATA_DIR" \
+  "Base model: $ELDER_STAGE1_BASE_MODEL" \
+  "Stage 1 checkpoint: $ELDER_STAGE1_CHECKPOINT" \
+  "Modalities: ${eval_modalities[*]}" \
+  "GPUs: $CUDA_VISIBLE_DEVICES" \
+  "Output: $run_dir"
+
+if [[ "$dry_run" != "1" ]]; then
+  checker_args=(
+    scripts/elder/check_mmeb_v2.py
+    --data-root "$ELDER_MMEV2_DATA_DIR"
+    --config-dir experiments/elder/mmeb_v2
+    --media-check-limit "$ELDER_MMEV2_MEDIA_CHECK_LIMIT"
+    --json-report "$run_dir/preflight.json"
+  )
+  for modality in "${eval_modalities[@]}"; do
+    checker_args+=(--modality "$modality")
+  done
+  python "${checker_args[@]}"
+fi
+
+# The benchmark must be fully local once readiness has passed.
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+
+for modality in "${eval_modalities[@]}"; do
+  config_path="experiments/elder/mmeb_v2/$modality.yaml"
+  output_path="$run_dir/$modality"
+  timing_path="$run_dir/${modality}_timing.csv"
+  log_path="$run_dir/logs/${modality}.log"
+  if [[ "$dry_run" != "1" ]]; then
+    mkdir -p "$output_path"
+  fi
+
+  command=(
+    torchrun
+    --standalone
+    --nproc_per_node="$gpu_count"
+    --max_restarts=0
+    eval.py
+    --model_name "$ELDER_STAGE1_BASE_MODEL"
+    --processor_name "$ELDER_STAGE1_BASE_MODEL"
+    --model_backbone qwen2_vl
+    --checkpoint_path "$ELDER_STAGE1_CHECKPOINT"
+    --lora true
+    --pooling eos
+    --normalize true
+    --bf16 true
+    --per_device_eval_batch_size "$ELDER_MMEV2_BATCH_SIZE"
+    --dataloader_num_workers "$ELDER_MMEV2_WORKERS"
+    --resize_max_pixels "$ELDER_MMEV2_RESIZE_MAX_PIXELS"
+    --dataset_config "$config_path"
+    --data_basedir "$ELDER_MMEV2_DATA_DIR"
+    --encode_output_path "$output_path"
+    --report_to none
+  )
+
+  printf 'Command (%s):' "$modality"
+  printf ' %q' "${command[@]}"
+  printf '\n'
+  if [[ "$dry_run" == "1" ]]; then
+    continue
+  fi
+
+  export EVAL_MODALITY="$modality"
+  export EVAL_DATASET_TIMING_LOG="$timing_path"
+  "${command[@]}" 2>&1 | tee "$log_path"
+done
+
+if [[ "$dry_run" == "1" ]]; then
+  printf '%s\n' 'Dry run complete; no readiness check or evaluation was executed.'
+else
+  printf 'MMEB-V2 Stage 1 evaluation complete: %s\n' "$run_dir"
+fi

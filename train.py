@@ -1,5 +1,7 @@
 # Adapted from Tevatron code
+import json
 import logging
+import os
 import os.path
 import sys
 
@@ -22,6 +24,7 @@ from src.trainer import GradCacheLateProcessTrainer
 from src.utils.basic_utils import print_rank, print_master, find_latest_checkpoint
 from src.utils.config_utils import resolve_dataset_paths
 from src.model.processor import load_processor, get_backbone_name
+from src.elder.stage1 import validate_stage1_v2_dora_configuration
 
 
 def main():
@@ -78,6 +81,25 @@ def main():
             wandb.config.update(training_args)
 
     model = MMEBModel.build(model_args)
+    if model_args.strict_stage1_dora:
+        audit_report = validate_stage1_v2_dora_configuration(model_args, model)
+        is_world_process_zero = (
+            not torch.distributed.is_initialized()
+            or torch.distributed.get_rank() == 0
+        )
+        if is_world_process_zero:
+            os.makedirs(training_args.output_dir, exist_ok=True)
+            audit_path = os.path.join(
+                training_args.output_dir, "stage1_trainable_parameters.json"
+            )
+            with open(audit_path, "w", encoding="utf-8") as handle:
+                json.dump(audit_report, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            logger.info(
+                "Strict Stage 1 V2 DoRA audit passed: trainable=%s; report=%s",
+                f"{audit_report['parameters']['trainable_parameters']:,}",
+                audit_path,
+            )
     model_backbone = get_backbone_name(hf_config=model.config)
     setattr(model_args, 'model_backbone', model_backbone)
     setattr(training_args, 'model_backbone', model_backbone)
@@ -104,11 +126,20 @@ def main():
     train_dataset.trainer = trainer
 
     trainer.train(resume_from_checkpoint=resume_checkpoint_dir)
-    trainer.save_model(training_args.output_dir)
 
-    if trainer.is_world_process_zero():
-        processor.save_pretrained(training_args.output_dir)
+    skip_final_save = os.environ.get("ELDER_SKIP_FINAL_SAVE", "0").lower() in {"1", "true", "yes"}
+    if skip_final_save:
+        if trainer.is_world_process_zero():
+            logger.info("ELDER_SKIP_FINAL_SAVE is enabled; skipping final model export.")
+    else:
+        trainer.save_model(training_args.output_dir)
+        if trainer.is_world_process_zero():
+            processor.save_pretrained(training_args.output_dir)
 
+
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.barrier()
+        torch.distributed.destroy_process_group()
 
 if __name__ == "__main__":
     main()

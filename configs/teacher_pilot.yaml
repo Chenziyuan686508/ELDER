@@ -1,0 +1,63 @@
+experiment:
+  name: teacher_pilot
+  seed: 42
+  output_dir: /root/autodl-tmp/eval/elder/teacher_pilot
+model:
+  family: vlm2vec_v2
+  name_or_path: /root/autodl-tmp/eval/elder/teacher_pilot/reference
+  repo_id: VLM2Vec/VLM2Vec-V2.0
+  revision: e39ff079b8275ef876d3656da8c0bddbff3c4dde
+  backbone: /root/autodl-tmp/models/Qwen2-VL-2B-Instruct
+  pooling: last_valid_token
+  normalize: true
+  freeze_vision: true
+  freeze_visual_connector: true
+  lora_rank: 32
+  lora_alpha: 64
+  lora_dropout: 0.05
+  adapter_policy: merge_released_dora_then_new_language_lora
+data:
+  root: /root/autodl-tmp/datasets/Embed-RL-Train/MMEB-train-contrastive-learning
+  repo_id: ZoengHouNaam/Embed-RL-Train
+  revision: af9e2e062e51f79df926909e7b9481fa697bfbcf
+  selected_tasks: [MSCOCO_i2t, Visual7W]
+  media_roots:
+    images/: /root/autodl-tmp/datasets/MMEB-train/images/
+    MMEB-train/llavahound/train_video_and_instruction/: /root/autodl-tmp/datasets/train_video_and_instruction/
+  max_train_pairs: 2048
+  max_train_pairs_reason: bounded first pilot on one H20; balanced 1024 pairs per task
+  validation_group_fraction: 0.05
+  validation_queries_per_task: 200
+  require_both_cot: true
+  sampler: task_balanced_same_task_batches
+input:
+  max_sequence_tokens: 4096
+  max_cot_tokens: 1024
+  max_pixels: 1003520
+  min_pixels: 3136
+  max_video_frames: 8
+  truncation: preserve_original_and_pool_then_cot_prefix
+training:
+  max_epochs: 1
+  max_optimizer_steps: 1000
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  gradient_clip_norm: 1.0
+  temperature: 0.02
+  contrastive_pool_target_pairs: 64
+  microbatch_pairs: 2
+  gradient_accumulation_steps: 1
+  negative_pool_backend: gradcache
+  precision: bfloat16
+  save_every: 10
+evaluation:
+  cot_source: independent_generator
+  generator_model: /root/autodl-tmp/models/GLM-4.1V-9B-Thinking
+  generator_temperature: 0
+  generator_max_new_tokens: 512
+  allow_reference_answers: false
+  checkpoint_selection: last
+process_export:
+  enabled: false
+  chunks: 3

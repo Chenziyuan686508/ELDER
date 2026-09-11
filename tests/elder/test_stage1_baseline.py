@@ -5,8 +5,10 @@ import torch
 
 from src.data.collator.train_collator import MultimodalDataCollator
 from src.elder.stage1 import (
+    audit_stage1_v2_trainable_parameters,
     compare_stage1_reports,
     compute_retrieval_metrics,
+    validate_stage1_v2_dora_configuration,
     validate_qwen2_vl_2b_config,
 )
 from src.loss import SimpleContrastiveLoss
@@ -76,6 +78,68 @@ def test_fixed_qwen2_vl_2b_contract_rejects_other_size():
         assert "Qwen/Qwen2-VL-2B-Instruct" in str(error)
     else:
         raise AssertionError("A non-2B config should be rejected.")
+
+
+class _FakeDoraLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.lora_A = torch.nn.ParameterDict(
+            {"default": torch.nn.Parameter(torch.ones(1))}
+        )
+        self.lora_B = torch.nn.ParameterDict(
+            {"default": torch.nn.Parameter(torch.ones(1))}
+        )
+        self.lora_magnitude_vector = torch.nn.ParameterDict(
+            {"default": torch.nn.Parameter(torch.ones(1))}
+        )
+
+
+class _FakeDoraModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.visual = torch.nn.Linear(1, 1)
+        self.visual.requires_grad_(False)
+        block = torch.nn.Module()
+        for module_type in ("q_proj", "k_proj", "v_proj", "o_proj", "down_proj"):
+            setattr(block, module_type, _FakeDoraLinear())
+        language_model = torch.nn.Module()
+        language_model.layers = torch.nn.ModuleList([block])
+        self.model = language_model
+
+
+def test_stage1_v2_trainable_parameter_audit_accepts_only_original_dora_targets():
+    model = _FakeDoraModel()
+    report = audit_stage1_v2_trainable_parameters(
+        model, expected_trainable_parameters=None
+    )
+
+    assert report["status"] == "passed"
+    assert report["checks"]["visual_tower_frozen"]
+    assert report["observed_module_types"] == [
+        "down_proj",
+        "k_proj",
+        "o_proj",
+        "q_proj",
+        "v_proj",
+    ]
+
+
+def test_stage1_v2_configuration_rejects_elder_alpha_32():
+    model_args = SimpleNamespace(
+        lora=True,
+        lora_adapter_scope="full_model",
+        lora_r=16,
+        lora_alpha=32,
+        lora_dropout=0.1,
+        lora_target_modules="q_proj,k_proj,v_proj,o_proj,down_proj",
+    )
+
+    try:
+        validate_stage1_v2_dora_configuration(model_args, _FakeDoraModel())
+    except ValueError as error:
+        assert "alpha_is_64" in str(error)
+    else:
+        raise AssertionError("Strict V2 audit should reject alpha=32.")
 
 
 def test_stage1_retrieval_metrics_and_acceptance():
@@ -209,3 +273,45 @@ def test_nested_peft_checkpoint_writes_resume_metadata(tmp_path):
     assert '"adapter_scope": "encoder.model"' in metadata
     assert '"model_type": "qwen2_vl"' in metadata
     assert '"hidden_size": 1536' in metadata
+
+
+def test_full_model_peft_checkpoint_does_not_write_hybrid_metadata(tmp_path):
+    class InnerModel:
+        peft_config = {"default": object()}
+
+        def save_pretrained(self, *args, **kwargs):
+            raise AssertionError("Nested saver must not run for full-model PEFT.")
+
+    encoder = SimpleNamespace(
+        peft_config={"default": object()},
+        model=InnerModel(),
+    )
+
+    _save_nested_peft_adapter(encoder, str(tmp_path))
+
+    assert not (tmp_path / HYBRID_CHECKPOINT_METADATA).exists()
+
+
+def test_strict_stage1_resume_reaudits_loaded_checkpoint(monkeypatch, tmp_path):
+    import src.trainer as trainer_module
+
+    loaded_model = object()
+    calls = []
+    monkeypatch.setattr(
+        trainer_module.MMEBModel,
+        "load",
+        lambda model_args: loaded_model,
+    )
+
+    def fake_validate(model_args, model):
+        calls.append((model_args, model))
+        return {"parameters": {"trainable_parameters": 9_203_712}}
+
+    monkeypatch.setattr(
+        trainer_module, "validate_stage1_v2_dora_configuration", fake_validate
+    )
+    trainer = object.__new__(trainer_module.MMEBTrainer)
+    trainer.model_args = SimpleNamespace(
+        checkpoint_path=None,
+        strict_stage1_dora=True,
+    )

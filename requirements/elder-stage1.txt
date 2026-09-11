@@ -23,6 +23,7 @@ peft==0.17.1
 pillow==12.2.0
 py-cpuinfo==9.0.0
 pyarrow==23.0.1
+pytrec-eval==0.5
 pytest==8.4.2
 PyYAML==6.0.3
 qwen-vl-utils==0.0.8

@@ -41,8 +41,10 @@ def data_prepare(batch_dict, *args, **kwargs):
 
 
 DATASET_PARSER_NAME = "image_cls"
-# DATASET_HF_PATH = "ziyjiang/MMEB_Test_Instruct"
-DATASET_HF_PATH = "/code/.cache/datasets/MMEB-v2_1/image-query"
+DATASET_HF_PATH = os.environ.get(
+    "MMEB_V2_IMAGE_QUERY_SOURCE", "ziyjiang/MMEB_Test_Instruct"
+)
+
 @AutoEvalPairDataset.register(DATASET_PARSER_NAME)
 def load_image_cls_dataset(model_args, data_args, *args, **kwargs):
     dataset_name = kwargs["dataset_name"]

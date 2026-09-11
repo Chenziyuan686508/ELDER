@@ -4,8 +4,16 @@ This repository is the implementation workspace for **ELDER — Explicit-to-Late
 Process Distillation for Efficient Multimodal Retrieval**. Development starts
 from a pinned import of the official VLM2Vec-V2 codebase.
 
-- Project specification: [`ELDER_IMPLEMENTATION_SPEC.md`](ELDER_IMPLEMENTATION_SPEC.md)
-- Milestone 1 baseline guide: [`docs/elder/MILESTONE1_BASELINE.md`](docs/elder/MILESTONE1_BASELINE.md)
+- Current execution specification: [教师模型训练执行说明.md](教师模型训练执行说明.md)
+- Teacher pilot implementation and commands: [teacher_pipeline/README.md](teacher_pipeline/README.md)
+- Earlier recurrent ELDER design (historical): [ELDER_IMPLEMENTATION_UPDATE.md](ELDER_IMPLEMENTATION_UPDATE.md)
+- Earlier Milestone 1 baseline guide: [docs/elder/MILESTONE1_BASELINE.md](docs/elder/MILESTONE1_BASELINE.md)
+
+The current task trains and validates a shared dual-encoder retrieval teacher
+that reads natural CoT independently at both endpoints. It compares matched
+NoCoT-FT and CoT-Teacher runs. The planned later student uses one-pass latent
+tokens; student training and the earlier fixed four-stage recurrent design
+are outside this teacher pilot.
 
 The upstream README is preserved below for reference.
 

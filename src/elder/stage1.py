@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -16,6 +17,163 @@ QWEN2_VL_2B_CONTRACT = {
     "hidden_size": 1536,
     "num_hidden_layers": 28,
 }
+
+STAGE1_V2_DORA_TARGET_MODULES = (
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "down_proj",
+)
+STAGE1_V2_DORA_FORBIDDEN_MODULES = ("gate_proj", "up_proj")
+STAGE1_V2_EXPECTED_TRAINABLE_PARAMETERS = 9_203_712
+_DORA_PARAMETER_MARKERS = (
+    ".lora_A.",
+    ".lora_B.",
+    ".lora_magnitude_vector.",
+)
+
+
+def _module_type_from_parameter_name(name: str) -> str | None:
+    for module_type in (
+        *STAGE1_V2_DORA_TARGET_MODULES,
+        *STAGE1_V2_DORA_FORBIDDEN_MODULES,
+    ):
+        if f".{module_type}." in name:
+            return module_type
+    return None
+
+
+def audit_stage1_v2_trainable_parameters(
+    model: Any,
+    *,
+    expected_trainable_parameters: int | None = STAGE1_V2_EXPECTED_TRAINABLE_PARAMETERS,
+) -> dict[str, Any]:
+    """Describe and validate the original Qwen2-VL VLM2Vec-V2 DoRA scope."""
+
+    trainable_names: list[str] = []
+    visual_names: list[str] = []
+    forbidden_names: list[str] = []
+    unexpected_names: list[str] = []
+    parameter_counts: Counter[str] = Counter()
+    tensor_counts: Counter[str] = Counter()
+    total_parameters = 0
+
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            continue
+        trainable_names.append(name)
+        numel = int(parameter.numel())
+        total_parameters += numel
+        lowered = f".{name.lower().strip('.')}."
+        if any(
+            token in lowered
+            for token in (".visual.", ".vision_tower.", ".vision_model.")
+        ):
+            visual_names.append(name)
+        module_type = _module_type_from_parameter_name(lowered)
+        is_dora_parameter = any(
+            marker.lower() in lowered for marker in _DORA_PARAMETER_MARKERS
+        )
+        if module_type in STAGE1_V2_DORA_FORBIDDEN_MODULES:
+            forbidden_names.append(name)
+        if module_type is None or not is_dora_parameter:
+            unexpected_names.append(name)
+            label = "unexpected"
+        else:
+            label = module_type
+        parameter_counts[label] += numel
+        tensor_counts[label] += 1
+
+    observed_modules = sorted(
+        module_type
+        for module_type in STAGE1_V2_DORA_TARGET_MODULES
+        if tensor_counts[module_type] > 0
+    )
+    checks = {
+        "has_trainable_parameters": total_parameters > 0,
+        "visual_tower_frozen": not visual_names,
+        "gate_and_up_proj_frozen": not forbidden_names,
+        "only_dora_target_parameters_trainable": not unexpected_names,
+        "all_expected_module_types_present": set(observed_modules)
+        == set(STAGE1_V2_DORA_TARGET_MODULES),
+        "trainable_parameter_count_matches": (
+            expected_trainable_parameters is None
+            or total_parameters == expected_trainable_parameters
+        ),
+    }
+    return {
+        "status": "passed" if all(checks.values()) else "failed",
+        "checks": checks,
+        "expected_trainable_parameters": expected_trainable_parameters,
+        "trainable_parameters": total_parameters,
+        "trainable_parameter_tensors": len(trainable_names),
+        "expected_module_types": list(STAGE1_V2_DORA_TARGET_MODULES),
+        "observed_module_types": observed_modules,
+        "parameter_counts_by_module": dict(sorted(parameter_counts.items())),
+        "tensor_counts_by_module": dict(sorted(tensor_counts.items())),
+        "visual_trainable_names": visual_names,
+        "forbidden_trainable_names": forbidden_names,
+        "unexpected_trainable_names": unexpected_names,
+        "trainable_names": trainable_names,
+    }
+
+
+def validate_stage1_v2_dora_configuration(model_args: Any, model: Any) -> dict[str, Any]:
+    """Fail fast unless model arguments and trainable tensors match V2."""
+
+    requested_targets = {
+        item.strip()
+        for item in str(getattr(model_args, "lora_target_modules", "")).split(",")
+        if item.strip()
+    }
+    config_checks = {
+        "lora_enabled": bool(getattr(model_args, "lora", False)),
+        "adapter_scope_is_full_model": getattr(
+            model_args, "lora_adapter_scope", None
+        )
+        == "full_model",
+        "rank_is_16": int(getattr(model_args, "lora_r", -1)) == 16,
+        "alpha_is_64": int(getattr(model_args, "lora_alpha", -1)) == 64,
+        "dropout_is_0_1": math.isclose(
+            float(getattr(model_args, "lora_dropout", -1.0)), 0.1
+        ),
+        "required_targets_requested": set(STAGE1_V2_DORA_TARGET_MODULES)
+        <= requested_targets,
+        "gate_and_up_not_requested": not (
+            set(STAGE1_V2_DORA_FORBIDDEN_MODULES) & requested_targets
+        ),
+    }
+    parameter_report = audit_stage1_v2_trainable_parameters(model)
+    report = {
+        "status": (
+            "passed"
+            if all(config_checks.values()) and parameter_report["status"] == "passed"
+            else "failed"
+        ),
+        "configuration": {
+            "lora_adapter_scope": getattr(model_args, "lora_adapter_scope", None),
+            "lora_r": getattr(model_args, "lora_r", None),
+            "lora_alpha": getattr(model_args, "lora_alpha", None),
+            "lora_dropout": getattr(model_args, "lora_dropout", None),
+            "lora_target_modules": sorted(requested_targets),
+        },
+        "configuration_checks": config_checks,
+        "parameters": parameter_report,
+    }
+    if report["status"] != "passed":
+        failed_config = [name for name, passed in config_checks.items() if not passed]
+        failed_parameters = [
+            name
+            for name, passed in parameter_report["checks"].items()
+            if not passed
+        ]
+        raise ValueError(
+            "Strict Stage 1 V2 DoRA contract failed: "
+            f"configuration={failed_config}, parameters={failed_parameters}, "
+            f"trainable={parameter_report['trainable_parameters']:,}"
+        )
+    return report
 
 
 def _config_value(config: Any, key: str) -> Any:

@@ -1,4 +1,6 @@
-from datasets import load_dataset
+from pathlib import Path
+
+from datasets import load_dataset, load_from_disk
 from PIL import Image
 from datasets.features.image import image_to_bytes
 import io
@@ -61,10 +63,18 @@ def load_vidore_dataset(model_args, data_args, training_args, *args, **kwargs):
     dataset_split = kwargs.get("dataset_split", "train")
     dataset_path = kwargs.get("dataset_path", None)
 
-    if dataset_name:
+    if dataset_path:
+        local_path = Path(dataset_path).expanduser()
+        if local_path.is_dir() and (local_path / "state.json").is_file():
+            # ``datasets.Dataset.save_to_disk`` output, used by the local
+            # ColPali download on the Stage 1 server.
+            dataset = load_from_disk(str(local_path))
+        else:
+            dataset = load_dataset("parquet", data_files=str(local_path), split="train")
+    elif dataset_name:
         dataset = load_dataset(dataset_name, split=dataset_split)
-    elif dataset_path:
-        dataset = load_dataset("parquet", data_files=dataset_path, split="train")
+    else:
+        raise ValueError("ViDoRe loading requires either `dataset_path` or `dataset_name`.")
 
     num_sample_per_subset = kwargs.get("num_sample_per_subset", getattr(data_args, "num_sample_per_subset", None))
     if num_sample_per_subset is not None and num_sample_per_subset < dataset.num_rows:

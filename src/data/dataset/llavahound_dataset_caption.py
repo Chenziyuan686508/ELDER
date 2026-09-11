@@ -57,7 +57,9 @@ def data_prepare_v5(batch_dict, *args, **kwargs):
                 query_texts.append(query)
                 pos_texts.append(VRET_TGT_PROMPT + VLM_VIDEO_TOKENS[model_backbone])
                 neg_texts.append([])
-                query_images.append({'bytes': [], 'paths': [], 'resolutions': []})
+                # A non-empty placeholder becomes ``[None]`` in the collator,
+                # which correctly selects Qwen's text-only processing path.
+                query_images.append({'bytes': [b''], 'paths': [''], 'resolutions': [[224, 224]]})
                 pos_images.append(video_frames)
                 neg_images.append([{'bytes': [b''], 'paths': [''], 'resolutions': [[224, 224]]}])
             else:

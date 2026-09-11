@@ -13,7 +13,7 @@ except ImportError:
     from src.model.vlm_backbone.qwen2_vl.qwen_vl_utils import smart_resize
 
 from src.model.processor import LLAVA_NEXT, QWEN2_VL, QWEN2_5_VL, \
-    QWEN2_VL_TOKENSELECTION, QWEN2_5_VL_TOKENSELECTION, PHI3V, process_vlm_inputs_fns
+    QWEN2_VL_TOKENSELECTION, QWEN2_5_VL_TOKENSELECTION, PHI3V, VLM_IMAGE_TOKENS, VLM_VIDEO_TOKENS, process_vlm_inputs_fns
 from PIL import Image
 import io
 from src.utils.basic_utils import print_rank, print_master
@@ -132,6 +132,24 @@ class MultimodalDataCollator:
     training_args: TrainingArguments
     batch_size: Optional[int] = None  # used to verify if a batch has invalid data
 
+    @staticmethod
+    def _normalize_text(text):
+        """Reduce dataset-provided answer variants to one tokenizer-ready string."""
+        if isinstance(text, str):
+            # Qwen2-VL's tokenizer encodes an empty string to zero tokens,
+            # which cannot be forwarded through attention.
+            return text if text.strip() else " "
+        if text is None:
+            return " "
+        if isinstance(text, (list, tuple)):
+            for candidate in text:
+                normalized = MultimodalDataCollator._normalize_text(candidate)
+                if normalized.strip():
+                    return normalized
+            return " "
+        normalized = str(text)
+        return normalized if normalized.strip() else " "
+
     def _get_batch_inputs(self, batch, text_keyname, image_keyname):
         texts, visual_inputs = [], []
         for example in batch:
@@ -141,6 +159,7 @@ class MultimodalDataCollator:
                 text, visual_input = '  ', None
             else:
                 text, raw_images = example[text_keyname], example[image_keyname]
+                text = self._normalize_text(text)
                 if type(raw_images) == dict:
                     visual_input = []
                     assert 'resolutions' in raw_images, "we need len(raw_images['resolutions']) to determine the number of images, set it a list of None of for cases that no resizing is needed"
@@ -184,6 +203,13 @@ class MultimodalDataCollator:
                         visual_input.append(image)
                 else:
                     visual_input = None
+                valid_visuals = [image for image in visual_input if image is not None] if visual_input else []
+                if valid_visuals and self.model_args.model_backbone in VLM_IMAGE_TOKENS:
+                    image_token = VLM_IMAGE_TOKENS[self.model_args.model_backbone]
+                    video_token = VLM_VIDEO_TOKENS[self.model_args.model_backbone]
+                    if image_token not in text and video_token not in text:
+                        visual_token = video_token if len(valid_visuals) > 1 else image_token
+                        text = f"{visual_token} {text}"
             texts.append(text)
             visual_inputs.append(visual_input)
         inputs = {'text': texts, 'images': visual_inputs}
@@ -211,5 +237,4 @@ class MultimodalDataCollator:
         processed_qry_inputs['global_dataset_name'] = [e['global_dataset_name'] for e in examples]
         processed_pos_inputs['global_dataset_name'] = [e['global_dataset_name'] for e in examples]
 
-        print_rank(f"\t\tQry collator: processed_qry_inputs['input_ids'].shape={processed_qry_inputs['input_ids'].shape}\t\tPos collator: processed_pos_inputs['input_ids'].shape={processed_pos_inputs['input_ids'].shape}")
         return processed_qry_inputs, processed_pos_inputs

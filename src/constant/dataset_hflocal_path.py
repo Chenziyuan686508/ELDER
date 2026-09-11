@@ -1,7 +1,14 @@
 # (repo, subset, split)
 import os
 
-BASE_RAW_DATA_DIR = os.environ.get("MMEB_V3_DATA_DIR", "data/MMEB-V3")
+BASE_RAW_DATA_DIR = os.environ.get(
+    "MMEB_V2_DATA_DIR",
+    os.environ.get("MMEB_V3_DATA_DIR", "data/MMEB-V3"),
+)
+IMAGE_QUERY_DATA_DIR = os.environ.get(
+    "MMEB_V2_IMAGE_QUERY_DIR",
+    os.path.join(BASE_RAW_DATA_DIR, "image-query"),
+)
 
 EVAL_DATASET_HF_PATH = {
     # Video-RET
@@ -67,45 +74,45 @@ EVAL_DATASET_HF_PATH = {
     "ViDoRe_esg_reports_v2_multilingual": (os.path.join(BASE_RAW_DATA_DIR, "visdoc-tasks", "data", "esg_reports_v2"), None, "test"),
 
     # NOTE: Comment translated to English.
-    "ImageNet-1K": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "ImageNet-1K", "test"),
-    "N24News": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "N24News", "test"),
-    "HatefulMemes": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "HatefulMemes", "test"),
-    "VOC2007": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "VOC2007", "test"),
-    "SUN397": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "SUN397", "test"),
-    "Place365": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "Place365", "test"),
-    "ImageNet-A": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "ImageNet-A", "test"),
-    "ImageNet-R": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "ImageNet-R", "test"),
-    "ObjectNet": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "ObjectNet", "test"),
-    "Country211": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "Country211", "test"),
+    "ImageNet-1K": (IMAGE_QUERY_DATA_DIR, "ImageNet-1K", "test"),
+    "N24News": (IMAGE_QUERY_DATA_DIR, "N24News", "test"),
+    "HatefulMemes": (IMAGE_QUERY_DATA_DIR, "HatefulMemes", "test"),
+    "VOC2007": (IMAGE_QUERY_DATA_DIR, "VOC2007", "test"),
+    "SUN397": (IMAGE_QUERY_DATA_DIR, "SUN397", "test"),
+    "Place365": (IMAGE_QUERY_DATA_DIR, "Place365", "test"),
+    "ImageNet-A": (IMAGE_QUERY_DATA_DIR, "ImageNet-A", "test"),
+    "ImageNet-R": (IMAGE_QUERY_DATA_DIR, "ImageNet-R", "test"),
+    "ObjectNet": (IMAGE_QUERY_DATA_DIR, "ObjectNet", "test"),
+    "Country211": (IMAGE_QUERY_DATA_DIR, "Country211", "test"),
     # Image-QA
-    "OK-VQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "OK-VQA", "test"),
-    "A-OKVQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "A-OKVQA", "test"),
-    "DocVQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "DocVQA", "test"),
-    "InfographicsVQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "InfographicsVQA", "test"),
-    "ChartQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "ChartQA", "test"),
-    "Visual7W": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "Visual7W", "test"),
-    "ScienceQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "ScienceQA", "test"),
-    "VizWiz": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "VizWiz", "test"),
-    "GQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "GQA", "test"),
-    "TextVQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "TextVQA", "test"),
+    "OK-VQA": (IMAGE_QUERY_DATA_DIR, "OK-VQA", "test"),
+    "A-OKVQA": (IMAGE_QUERY_DATA_DIR, "A-OKVQA", "test"),
+    "DocVQA": (IMAGE_QUERY_DATA_DIR, "DocVQA", "test"),
+    "InfographicsVQA": (IMAGE_QUERY_DATA_DIR, "InfographicsVQA", "test"),
+    "ChartQA": (IMAGE_QUERY_DATA_DIR, "ChartQA", "test"),
+    "Visual7W": (IMAGE_QUERY_DATA_DIR, "Visual7W", "test"),
+    "ScienceQA": (IMAGE_QUERY_DATA_DIR, "ScienceQA", "test"),
+    "VizWiz": (IMAGE_QUERY_DATA_DIR, "VizWiz", "test"),
+    "GQA": (IMAGE_QUERY_DATA_DIR, "GQA", "test"),
+    "TextVQA": (IMAGE_QUERY_DATA_DIR, "TextVQA", "test"),
     # Image-RET
-    "VisDial": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "VisDial", "test"),
-    "CIRR": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "CIRR", "test"),
-    "VisualNews_t2i": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "VisualNews_t2i", "test"),
-    "VisualNews_i2t": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "VisualNews_i2t", "test"),
-    "MSCOCO_t2i": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "MSCOCO_t2i", "test"),
-    "MSCOCO_i2t": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "MSCOCO_i2t", "test"),
-    "NIGHTS": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "NIGHTS", "test"),
-    "WebQA": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "WebQA", "test"),
-    "FashionIQ": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "FashionIQ", "test"),
-    "Wiki-SS-NQ": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "Wiki-SS-NQ", "test"),
-    "OVEN": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "OVEN", "test"),
-    "EDIS": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "EDIS", "test"),
+    "VisDial": (IMAGE_QUERY_DATA_DIR, "VisDial", "test"),
+    "CIRR": (IMAGE_QUERY_DATA_DIR, "CIRR", "test"),
+    "VisualNews_t2i": (IMAGE_QUERY_DATA_DIR, "VisualNews_t2i", "test"),
+    "VisualNews_i2t": (IMAGE_QUERY_DATA_DIR, "VisualNews_i2t", "test"),
+    "MSCOCO_t2i": (IMAGE_QUERY_DATA_DIR, "MSCOCO_t2i", "test"),
+    "MSCOCO_i2t": (IMAGE_QUERY_DATA_DIR, "MSCOCO_i2t", "test"),
+    "NIGHTS": (IMAGE_QUERY_DATA_DIR, "NIGHTS", "test"),
+    "WebQA": (IMAGE_QUERY_DATA_DIR, "WebQA", "test"),
+    "FashionIQ": (IMAGE_QUERY_DATA_DIR, "FashionIQ", "test"),
+    "Wiki-SS-NQ": (IMAGE_QUERY_DATA_DIR, "Wiki-SS-NQ", "test"),
+    "OVEN": (IMAGE_QUERY_DATA_DIR, "OVEN", "test"),
+    "EDIS": (IMAGE_QUERY_DATA_DIR, "EDIS", "test"),
     # Image-VG
-    "MSCOCO": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "MSCOCO", "test"),
-    "RefCOCO": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "RefCOCO", "test"),
-    "RefCOCO-Matching": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "RefCOCO-Matching", "test"),
-    "Visual7W-Pointing": (os.path.join(BASE_RAW_DATA_DIR, "image-query"), "Visual7W-Pointing", "test"),
+    "MSCOCO": (IMAGE_QUERY_DATA_DIR, "MSCOCO", "test"),
+    "RefCOCO": (IMAGE_QUERY_DATA_DIR, "RefCOCO", "test"),
+    "RefCOCO-Matching": (IMAGE_QUERY_DATA_DIR, "RefCOCO-Matching", "test"),
+    "Visual7W-Pointing": (IMAGE_QUERY_DATA_DIR, "Visual7W-Pointing", "test"),
 
     # ToolDe
     "ToolDe-Queries-web": (os.path.join(BASE_RAW_DATA_DIR, "tool-tasks", "ToolDe-Queries", "web"), "ToolDe-Queries-web", "test"),

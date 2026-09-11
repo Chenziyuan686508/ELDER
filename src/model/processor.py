@@ -830,10 +830,14 @@ def Qwen2_VL_process_fn(model_inputs: dict, processor: Qwen2VLProcessor, max_len
                     inputs = processor(text=[text], videos=[visual_input], return_tensors="np", max_length=max_length, truncation=(max_length is not None), input_data_format=ChannelDimension.LAST)
                 else:
                     raise NotImplementedError(f"No visual token found ({vlm_image_token} or {vlm_video_token}) in the text: {text}")
-            except Exception as e:
-                for i in visual_input:
-                    print(i.filename)
-                raise e
+            except Exception:
+                for image in visual_input:
+                    filename = getattr(image, "filename", None)
+                    if filename:
+                        print(filename)
+                    else:
+                        print(f"<in-memory image size={getattr(image, 'size', None)}>")
+                raise
             input_ids.append(inputs["input_ids"].squeeze().tolist())
             if 'pixel_values' in inputs:
                 pixel_values.append(inputs['pixel_values'])

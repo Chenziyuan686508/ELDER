@@ -688,10 +688,29 @@ class MMEBModel(nn.Module):
                 use_dora=True,
                 inference_mode=False,
             )
-            if hasattr(base_model, "model") and base_model.model is not None:
-                base_model.model = get_peft_model(base_model.model, lora_config)
-            else:
+            adapter_scope = getattr(model_args, "lora_adapter_scope", "auto")
+            if adapter_scope == "full_model":
+                # Original VLM2Vec-V2 behavior: PEFT owns the complete
+                # conditional-generation model. PEFT freezes every base
+                # parameter not matched by target_modules, including Qwen2-VL's
+                # visual tower, which lives outside ``base_model.model``.
                 base_model = get_peft_model(base_model, lora_config)
+            elif adapter_scope == "language_model":
+                if not hasattr(base_model, "model") or base_model.model is None:
+                    raise ValueError(
+                        "lora_adapter_scope='language_model' requires base_model.model"
+                    )
+                base_model.model = get_peft_model(base_model.model, lora_config)
+            elif adapter_scope == "auto":
+                if hasattr(base_model, "model") and base_model.model is not None:
+                    base_model.model = get_peft_model(base_model.model, lora_config)
+                else:
+                    base_model = get_peft_model(base_model, lora_config)
+            else:
+                raise ValueError(
+                    "Unsupported lora_adapter_scope="
+                    f"{adapter_scope!r}; expected auto, full_model, or language_model"
+                )
             model = cls(
                 encoder=base_model,
                 pooling=model_args.pooling,

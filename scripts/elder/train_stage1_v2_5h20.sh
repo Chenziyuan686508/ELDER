@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$repo_dir"
+
+if [[ ! -f .env.elder ]]; then
+  printf 'Missing .env.elder. Copy experiments/elder/local_paths.autodl.env.example first.\n' >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1091
+set -a
+source .env.elder
+set +a
+export ELDER_ENV_LOADED=1
+
+# Five H20s can reproduce the official 1024-wide in-batch candidate pool to
+# within one example: 5 * 205 = 1025. GradCache controls activation memory;
+# it does not reduce the contrastive pool assembled by DDP all-gather.
+export ELDER_OUTPUT_DIR="${ELDER_STAGE1_V2_5H20_OUTPUT_DIR:-/root/autodl-tmp/checkpoints/elder/stage1_v2_5h20_bs1025_step2k}"
+export ELDER_CUDA_VISIBLE_DEVICES="${ELDER_STAGE1_V2_5H20_CUDA_VISIBLE_DEVICES:-0,1,2,3,4}"
+export ELDER_EXPECTED_GPU_COUNT=5
+export ELDER_MAX_STEPS="${ELDER_STAGE1_V2_5H20_MAX_STEPS:-2000}"
+export ELDER_PER_DEVICE_BATCH_SIZE="${ELDER_STAGE1_V2_5H20_PER_DEVICE_BATCH_SIZE:-205}"
+export ELDER_GRAD_ACCUM_STEPS="${ELDER_STAGE1_V2_5H20_GRAD_ACCUM_STEPS:-1}"
+export ELDER_HOMOGENEOUS_BATCH_SIZE_PER_DEVICE="${ELDER_STAGE1_V2_5H20_HOMOGENEOUS_BATCH_SIZE_PER_DEVICE:-13}"
+export ELDER_GC_Q_CHUNK_SIZE="${ELDER_STAGE1_V2_5H20_GC_Q_CHUNK_SIZE:-4}"
+export ELDER_GC_P_CHUNK_SIZE="${ELDER_STAGE1_V2_5H20_GC_P_CHUNK_SIZE:-4}"
+export ELDER_DATALOADER_NUM_WORKERS="${ELDER_STAGE1_V2_5H20_DATALOADER_NUM_WORKERS:-1}"
+export ELDER_RESIZE_MAX_PIXELS="${ELDER_STAGE1_V2_5H20_RESIZE_MAX_PIXELS:-1003520}"
+export ELDER_SAVE_STRATEGY="${ELDER_STAGE1_V2_5H20_SAVE_STRATEGY:-steps}"
+export ELDER_SAVE_STEPS="${ELDER_STAGE1_V2_5H20_SAVE_STEPS:-500}"
+export ELDER_SAVE_TOTAL_LIMIT="${ELDER_STAGE1_V2_5H20_SAVE_TOTAL_LIMIT:-3}"
+export ELDER_WARMUP_STEPS="${ELDER_STAGE1_V2_5H20_WARMUP_STEPS:-100}"
+export ELDER_LEARNING_RATE="${ELDER_STAGE1_V2_5H20_LEARNING_RATE:-5e-5}"
+export ELDER_LOGGING_STEPS="${ELDER_STAGE1_V2_5H20_LOGGING_STEPS:-10}"
+export ELDER_LOG_BATCH_COMPOSITION="${ELDER_STAGE1_V2_5H20_LOG_BATCH_COMPOSITION:-0}"
+export ELDER_LORA_R="${ELDER_STAGE1_V2_5H20_LORA_R:-16}"
+export ELDER_LORA_ALPHA="${ELDER_STAGE1_V2_5H20_LORA_ALPHA:-32}"
+export ELDER_DDP_FIND_UNUSED_PARAMETERS="${ELDER_STAGE1_V2_5H20_DDP_FIND_UNUSED_PARAMETERS:-true}"
+export ELDER_RUN_NAME="${ELDER_STAGE1_V2_5H20_RUN_NAME:-elder-stage1-v2-5h20-bs1025-step2k}"
+export ELDER_RESUME_FROM="${ELDER_STAGE1_V2_5H20_RESUME_FROM:-auto}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
+exec bash scripts/elder/train_stage1_full_4h20.sh "$@"

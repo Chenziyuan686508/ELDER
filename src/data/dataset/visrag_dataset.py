@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 from datasets import load_dataset
 from PIL import Image
 from datasets.features.image import image_to_bytes
@@ -76,6 +79,32 @@ def data_prepare_v3(batch_dict, *args, **kwargs):
 
 
 DATASET_PARSER_NAME = "visrag"
+
+
+def _canonical_local_shards(dataset_path: str):
+    """Return only complete numbered parquet shards from a local VisRAG dir.
+
+    Interrupted Hugging Face downloads can leave ``*.tmp`` and duplicate
+    ``*-1.parquet`` files next to the completed shards. Restricting a local
+    directory to the canonical ``train-00000-of-00037.parquet`` pattern keeps
+    those partial artifacts out of training without deleting user data.
+    """
+
+    path = Path(dataset_path).expanduser()
+    if not path.is_dir():
+        return str(path)
+
+    shard_pattern = re.compile(r"train-\d{5}-of-\d{5}\.parquet")
+    files = sorted(
+        candidate
+        for candidate in path.glob("*.parquet")
+        if shard_pattern.fullmatch(candidate.name)
+    )
+    if not files:
+        raise FileNotFoundError(f"No complete VisRAG parquet shards found in {path}")
+    return [str(candidate) for candidate in files]
+
+
 @AutoPairDataset.register(DATASET_PARSER_NAME)
 def load_visreg_dataset(model_args, data_args, training_args, *args, **kwargs):
     dataset_name = kwargs.get("dataset_name", DATASET_PARSER_NAME)
@@ -84,7 +113,11 @@ def load_visreg_dataset(model_args, data_args, training_args, *args, **kwargs):
     dataset_path = kwargs.get("dataset_path", None)
 
     if dataset_path:
-        dataset = load_dataset("parquet", data_files=dataset_path, split="train")
+        dataset = load_dataset(
+            "parquet",
+            data_files=_canonical_local_shards(dataset_path),
+            split="train",
+        )
     elif dataset_name:
         dataset = load_dataset(dataset_name, split=dataset_split)
 
